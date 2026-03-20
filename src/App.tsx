@@ -5,13 +5,22 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { GraduationCap, BookOpen, Camera, CheckCircle, Download, Loader2, AlertCircle, RefreshCw, Send, Sun, Moon, Trash2 } from 'lucide-react';
+import { GraduationCap, BookOpen, Camera, CheckCircle, Download, Loader2, AlertCircle, RefreshCw, Send, Sun, Moon, Trash2, History, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 
 // Backend URL
 const BACKEND_URL = 'https://backend-production-204f.up.railway.app/get-score';
+
+interface GradingHistoryItem {
+  id: string;
+  timestamp: number;
+  modelAnswer: string;
+  studentResponse: string;
+  score: number;
+  feedback: string;
+}
 
 export default function App() {
   const [modelAnswer, setModelAnswer] = useState<string>('');
@@ -23,9 +32,28 @@ export default function App() {
   const [status, setStatus] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  const [history, setHistory] = useState<GradingHistoryItem[]>([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  // Initialize history from localStorage
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('grading_history');
+    if (savedHistory) {
+      try {
+        setHistory(JSON.parse(savedHistory));
+      } catch (e) {
+        console.error('Failed to parse history', e);
+      }
+    }
+  }, []);
+
+  // Save history to localStorage
+  useEffect(() => {
+    localStorage.setItem('grading_history', JSON.stringify(history));
+  }, [history]);
 
   // Initialize theme from system preference
   useEffect(() => {
@@ -154,7 +182,19 @@ export default function App() {
           Student Response: "${studentResponse}"
           Provide a constructive 2-sentence feedback summary highlighting strengths or areas for improvement.`,
         });
-        setFeedback(feedbackResult.text || '');
+        const finalFeedback = feedbackResult.text || '';
+        setFeedback(finalFeedback);
+        
+        // Save to History
+        const historyItem: GradingHistoryItem = {
+          id: Date.now().toString(),
+          timestamp: Date.now(),
+          modelAnswer,
+          studentResponse,
+          score: semanticScore,
+          feedback: finalFeedback
+        };
+        setHistory(prev => [historyItem, ...prev]);
         
         setStatus('Evaluation complete!');
       } catch (fetchErr: any) {
@@ -181,19 +221,46 @@ export default function App() {
   const downloadReport = async () => {
     if (!reportRef.current) return;
     try {
+      setStatus('Preparing PDF report...');
       const canvas = await html2canvas(reportRef.current, { 
         scale: 2,
-        backgroundColor: isDarkMode ? '#1e293b' : '#ffffff'
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: isDarkMode ? '#1e293b' : '#ffffff',
+        logging: false
       });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`Grading_Report_${new Date().getTime()}.pdf`);
-    } catch (err) {
-      setError('Failed to generate PDF.');
+      setStatus('PDF exported successfully!');
+    } catch (err: any) {
+      console.error('PDF Generation Error:', err);
+      setError(`Failed to generate PDF: ${err.message || 'Unknown error'}`);
+    }
+  };
+
+  const loadFromHistory = (item: GradingHistoryItem) => {
+    setModelAnswer(item.modelAnswer);
+    setStudentResponse(item.studentResponse);
+    setScore(item.score);
+    setFeedback(item.feedback);
+    setIsHistoryOpen(false);
+    setStatus('Loaded from history');
+  };
+
+  const deleteHistoryItem = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setHistory(prev => prev.filter(item => item.id !== id));
+  };
+
+  const clearHistory = () => {
+    if (confirm('Are you sure you want to clear all history?')) {
+      setHistory([]);
     }
   };
 
@@ -211,14 +278,122 @@ export default function App() {
           </div>
         </div>
 
-        <button 
-          onClick={() => setIsDarkMode(!isDarkMode)}
-          className={`p-2 rounded-xl transition-all duration-300 ${isDarkMode ? 'bg-slate-800 text-yellow-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-          aria-label="Toggle dark mode"
-        >
-          {isDarkMode ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setIsHistoryOpen(true)}
+            className={`p-2 rounded-xl transition-all active:scale-95 ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-600'}`}
+            title="View History"
+          >
+            <History className="w-5 h-5" />
+          </button>
+          <button 
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className={`p-2 rounded-xl transition-all duration-300 ${isDarkMode ? 'bg-slate-800 text-yellow-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            aria-label="Toggle dark mode"
+          >
+            {isDarkMode ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
+          </button>
+        </div>
       </header>
+
+      {/* History Sidebar */}
+      <AnimatePresence>
+        {isHistoryOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsHistoryOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+            />
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className={`fixed right-0 top-0 h-full w-full max-w-md z-50 shadow-2xl flex flex-col ${isDarkMode ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}`}
+            >
+              <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div className="flex items-center gap-3">
+                  <History className="w-6 h-6 text-indigo-600" />
+                  <h2 className="text-xl font-black uppercase tracking-tight">Grading History</h2>
+                </div>
+                <button 
+                  onClick={() => setIsHistoryOpen(false)}
+                  className={`p-2 rounded-full transition-colors ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {history.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-8">
+                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                      <History className="w-8 h-8 opacity-20" />
+                    </div>
+                    <p className={`text-sm font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>No history yet. Start grading to see your past submissions here!</p>
+                  </div>
+                ) : (
+                  history.map((item) => (
+                    <motion.div 
+                      key={item.id}
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      onClick={() => loadFromHistory(item)}
+                      className={`p-4 rounded-2xl border cursor-pointer transition-all hover:scale-[1.02] active:scale-95 group ${
+                        isDarkMode 
+                        ? 'bg-slate-800 border-slate-700 hover:border-indigo-500' 
+                        : 'bg-slate-50 border-slate-100 hover:border-indigo-300 shadow-sm'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                            item.score >= 7 ? 'bg-emerald-500/10 text-emerald-500' : 
+                            item.score >= 4 ? 'bg-amber-500/10 text-amber-500' : 
+                            'bg-rose-500/10 text-rose-500'
+                          }`}>
+                            Score: {item.score}/10
+                          </div>
+                          <span className={`text-[10px] font-medium ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                            {new Date(item.timestamp).toLocaleDateString()} {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <button 
+                          onClick={(e) => deleteHistoryItem(item.id, e)}
+                          className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity ${isDarkMode ? 'hover:bg-slate-700 text-slate-500' : 'hover:bg-slate-200 text-slate-400'}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <p className={`text-xs line-clamp-2 font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                        {item.studentResponse}
+                      </p>
+                    </motion.div>
+                  ))
+                )}
+              </div>
+
+              {history.length > 0 && (
+                <div className={`p-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                  <button 
+                    onClick={clearHistory}
+                    className={`w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${
+                      isDarkMode ? 'bg-slate-800 hover:bg-rose-900/40 text-rose-500' : 'bg-rose-50 hover:bg-rose-100 text-rose-600'
+                    }`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Clear All History
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <main className="max-w-4xl mx-auto py-6 sm:py-12 px-4">
         {/* Grading Dashboard Card */}
@@ -369,59 +544,80 @@ export default function App() {
             >
               <div 
                 ref={reportRef}
-                className={`rounded-3xl p-6 sm:p-10 border shadow-2xl transition-colors duration-300 ${
-                  isDarkMode 
-                  ? 'bg-slate-900 border-slate-800 shadow-black/40' 
-                  : 'bg-white border-indigo-50 shadow-2xl'
-                }`}
+                style={{ 
+                  backgroundColor: isDarkMode ? '#0f172a' : '#ffffff',
+                  borderColor: isDarkMode ? '#1e293b' : '#e2e8f0',
+                  color: isDarkMode ? '#f8fafc' : '#0f172a',
+                  borderRadius: '1.5rem',
+                  padding: '2.5rem',
+                  borderWidth: '1px',
+                  borderStyle: 'solid',
+                  boxShadow: isDarkMode ? '0 25px 50px -12px rgba(0, 0, 0, 0.5)' : '0 25px 50px -12px rgba(0, 0, 0, 0.1)'
+                }}
               >
-                <div className="flex flex-col md:flex-row justify-between items-center gap-6 sm:gap-8 mb-6 sm:mb-10">
-                  <div className="text-center md:text-left">
-                    <h3 className={`text-2xl sm:text-3xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Assessment Result</h3>
-                    <p className={`text-sm sm:font-medium mt-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Theoretical Accuracy Analysis</p>
+                <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem' }}>
+                  <div style={{ textAlign: 'left' }}>
+                    <h3 style={{ fontSize: '1.875rem', fontWeight: 900, margin: 0, color: isDarkMode ? '#ffffff' : '#0f172a' }}>Assessment Result</h3>
+                    <p style={{ fontSize: '0.875rem', fontWeight: 500, marginTop: '0.25rem', color: isDarkMode ? '#64748b' : '#94a3b8' }}>Theoretical Accuracy Analysis</p>
                   </div>
-                  <div className="relative">
-                    <svg className="w-24 h-24 sm:w-32 sm:h-32 transform -rotate-90">
+                  <div style={{ position: 'relative', width: '8rem', height: '8rem' }}>
+                    <svg width="128" height="128" viewBox="0 0 128 128" style={{ transform: 'rotate(-90deg)' }}>
                       <circle
-                        cx="48"
-                        cy="48"
-                        r="42"
-                        stroke="currentColor"
-                        strokeWidth="6"
+                        cx="64"
+                        cy="64"
+                        r="56"
+                        stroke={isDarkMode ? '#1e293b' : '#f1f5f9'}
+                        strokeWidth="8"
                         fill="transparent"
-                        className={isDarkMode ? 'text-slate-800' : 'text-slate-100'}
-                        style={{ cx: '50%', cy: '50%', r: '40%' }}
                       />
                       <circle
-                        cx="48"
-                        cy="48"
-                        r="42"
-                        stroke="currentColor"
-                        strokeWidth="6"
+                        cx="64"
+                        cy="64"
+                        r="56"
+                        stroke="#4f46e5"
+                        strokeWidth="8"
                         fill="transparent"
-                        strokeDasharray="251.2"
-                        strokeDashoffset={251.2 - (251.2 * score) / 10}
-                        className="text-indigo-600 transition-all duration-1000 ease-out"
-                        style={{ cx: '50%', cy: '50%', r: '40%' }}
+                        strokeDasharray="351.8"
+                        strokeDashoffset={351.8 - (351.8 * score) / 10}
+                        style={{ transition: 'stroke-dashoffset 1s ease-out' }}
                       />
                     </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className={`text-2xl sm:text-4xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{score}</span>
-                      <span className={`text-[8px] sm:text-[10px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Score</span>
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: '2.25rem', fontWeight: 900, color: isDarkMode ? '#ffffff' : '#0f172a' }}>{score}</span>
+                      <span style={{ fontSize: '0.625rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: isDarkMode ? '#64748b' : '#94a3b8' }}>Score</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className={`p-6 rounded-2xl border transition-colors duration-300 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-                    <h4 className={`text-[10px] font-black uppercase tracking-widest mb-4 ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>Semantic Accuracy</h4>
-                    <p className={`text-sm leading-relaxed italic ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                      The submission demonstrates a <span className="text-indigo-600 font-bold">{(score * 10).toFixed(0)}%</span> alignment with the reference model answer.
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
+                  <div 
+                    style={{ 
+                      padding: '1.5rem',
+                      borderRadius: '1rem',
+                      borderWidth: '1px',
+                      borderStyle: 'solid',
+                      backgroundColor: isDarkMode ? '#020617' : '#f8fafc',
+                      borderColor: isDarkMode ? '#1e293b' : '#f1f5f9'
+                    }}
+                  >
+                    <h4 style={{ fontSize: '0.625rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '1rem', color: isDarkMode ? '#475569' : '#94a3b8' }}>Semantic Accuracy</h4>
+                    <p style={{ fontSize: '0.875rem', lineHeight: 1.625, fontStyle: 'italic', color: isDarkMode ? '#94a3b8' : '#475569' }}>
+                      The submission demonstrates a <span style={{ color: '#4f46e5', fontWeight: 'bold' }}>{(score * 10).toFixed(0)}%</span> alignment with the reference model answer.
                     </p>
                   </div>
-                  <div className={`p-6 rounded-2xl shadow-xl transition-colors duration-300 ${isDarkMode ? 'bg-indigo-900/40 shadow-black/20 border border-indigo-900/50' : 'bg-indigo-600 shadow-indigo-100'}`}>
-                    <h4 className={`text-[10px] font-black uppercase tracking-widest mb-4 ${isDarkMode ? 'text-indigo-400' : 'text-white/60'}`}>AI Feedback</h4>
-                    <p className={`text-sm font-medium leading-relaxed ${isDarkMode ? 'text-indigo-100' : 'text-white'}`}>
+                  <div 
+                    style={{ 
+                      padding: '1.5rem',
+                      borderRadius: '1rem',
+                      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+                      backgroundColor: isDarkMode ? 'rgba(49, 46, 129, 0.4)' : '#4f46e5',
+                      borderWidth: isDarkMode ? '1px' : '0px',
+                      borderStyle: 'solid',
+                      borderColor: isDarkMode ? 'rgba(49, 46, 129, 0.5)' : 'transparent'
+                    }}
+                  >
+                    <h4 style={{ fontSize: '0.625rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '1rem', color: isDarkMode ? '#818cf8' : 'rgba(255, 255, 255, 0.6)' }}>AI Feedback</h4>
+                    <p style={{ fontSize: '0.875rem', fontWeight: 500, lineHeight: 1.625, color: isDarkMode ? '#e0e7ff' : '#ffffff' }}>
                       {feedback}
                     </p>
                   </div>

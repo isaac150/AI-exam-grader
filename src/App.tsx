@@ -5,7 +5,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { GraduationCap, BookOpen, Camera, CheckCircle, Download, Loader2, AlertCircle, RefreshCw, Send, Sun, Moon } from 'lucide-react';
+import { GraduationCap, BookOpen, Camera, CheckCircle, Download, Loader2, AlertCircle, RefreshCw, Send, Sun, Moon, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -88,7 +88,7 @@ export default function App() {
       if (errorMessage.includes('API_KEY_INVALID') || errorMessage.includes('API key not found')) {
         setError('Gemini API Key is missing or invalid. Please check your project secrets.');
       } else if (errorMessage.includes('quota') || errorMessage.includes('429')) {
-        setError('API quota exceeded. Please try again later.');
+        setError('API quota exceeded (Free Tier limit). Please wait 60 seconds and try again.');
       } else {
         setError(`OCR Error: ${errorMessage || 'Failed to scan image. Please ensure the image is clear and try again.'}`);
       }
@@ -150,7 +150,12 @@ export default function App() {
       setStatus('Evaluation complete!');
     } catch (err: any) {
       console.error('Evaluation Error:', err);
-      setError(err.message || 'An unexpected error occurred during evaluation.');
+      const errorMessage = err.message || '';
+      if (errorMessage.includes('quota') || errorMessage.includes('429')) {
+        setError('API quota exceeded (Free Tier limit). Please wait 60 seconds and try again.');
+      } else {
+        setError(`Evaluation Error: ${errorMessage || 'Failed to evaluate submission. Please try again.'}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -220,9 +225,18 @@ export default function App() {
           <div className="p-5 sm:p-8 space-y-6 sm:space-y-8">
             {/* Model Answer Section */}
             <div className="space-y-3">
-              <label className={`text-xs sm:text-sm font-semibold flex items-center gap-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                Model Answer <span className={`${isDarkMode ? 'text-slate-500' : 'text-slate-400'} font-normal`}>(Reference)</span>
-              </label>
+              <div className="flex justify-between items-end gap-2">
+                <label className={`text-xs sm:text-sm font-semibold flex items-center gap-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                  Model Answer <span className={`${isDarkMode ? 'text-slate-500' : 'text-slate-400'} font-normal`}>(Reference)</span>
+                </label>
+                <button
+                  onClick={() => setModelAnswer('')}
+                  className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest transition-colors ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Clear
+                </button>
+              </div>
               <textarea
                 value={modelAnswer}
                 onChange={(e) => setModelAnswer(e.target.value)}
@@ -238,9 +252,18 @@ export default function App() {
             {/* Student Response Section */}
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-2">
-                <label className={`text-xs sm:text-sm font-semibold flex items-center gap-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                  Student Response <span className={`${isDarkMode ? 'text-slate-500' : 'text-slate-400'} font-normal`}>(To be graded)</span>
-                </label>
+                <div className="flex justify-between items-end w-full sm:w-auto gap-4">
+                  <label className={`text-xs sm:text-sm font-semibold flex items-center gap-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Student Response <span className={`${isDarkMode ? 'text-slate-500' : 'text-slate-400'} font-normal`}>(To be graded)</span>
+                  </label>
+                  <button
+                    onClick={() => setStudentResponse('')}
+                    className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest transition-colors ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    Clear
+                  </button>
+                </div>
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={ocrLoading}

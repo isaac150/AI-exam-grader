@@ -42,9 +42,9 @@ export default function App() {
     setError(null);
     setStatus('Scanning handwritten paper...');
 
-    const apiKey = process.env.GEMINI_API_KEY || '';
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GOOGLE_AI_KEY || '';
     if (!apiKey) {
-      setError('Gemini API Key is not configured. Please add GEMINI_API_KEY to your project secrets in the Settings menu.');
+      setError('Gemini API Key is not configured. Please add GEMINI_API_KEY to your project secrets in AI Studio, or VITE_GOOGLE_AI_KEY in Vercel.');
       setOcrLoading(false);
       return;
     }
@@ -110,9 +110,9 @@ export default function App() {
     setScore(null);
     setFeedback('');
 
-    const apiKey = process.env.GEMINI_API_KEY || '';
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GOOGLE_AI_KEY || '';
     if (!apiKey) {
-      setError('Gemini API Key is not configured. Please add GEMINI_API_KEY to your project secrets.');
+      setError('Gemini API Key is not configured. Please add GEMINI_API_KEY to your project secrets in AI Studio, or VITE_GOOGLE_AI_KEY in Vercel.');
       setLoading(false);
       return;
     }

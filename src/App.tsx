@@ -11,7 +11,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 // Backend URL
-const BACKEND_URL = 'https://backend-1rry.onrender.com/get-score';
+const BACKEND_URL = 'https://backend-production-204f.up.railway.app/get-score';
 
 export default function App() {
   const [modelAnswer, setModelAnswer] = useState<string>('');
@@ -121,34 +121,49 @@ export default function App() {
     try {
       const genAI = new GoogleGenAI({ apiKey });
       // 1. Get Score from Backend (SBERT)
-      setStatus('Calculating semantic similarity...');
-      const response = await fetch(BACKEND_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          model_answer: modelAnswer, 
-          student_answer: studentResponse 
-        })
-      });
+      setStatus('Calculating semantic similarity (Backend may take 50s to wake up)...');
       
-      if (!response.ok) throw new Error('Backend scoring failed');
-      const data = await response.json();
-      const semanticScore = data.score; // 0-10
-      setScore(semanticScore);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
-      // 2. Generate Qualitative Feedback using Gemini
-      setStatus('Generating qualitative feedback...');
-      const model = "gemini-3-flash-preview";
-      const feedbackResult = await genAI.models.generateContent({
-        model,
-        contents: `Act as a professional examiner. A student scored ${semanticScore}/10 on a theoretical question. 
-        Model Answer: "${modelAnswer}"
-        Student Response: "${studentResponse}"
-        Provide a constructive 2-sentence feedback summary highlighting strengths or areas for improvement.`,
-      });
-      setFeedback(feedbackResult.text || '');
-      
-      setStatus('Evaluation complete!');
+      try {
+        const response = await fetch(BACKEND_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            model_answer: modelAnswer, 
+            student_answer: studentResponse 
+          }),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) throw new Error('Backend scoring failed');
+        const data = await response.json();
+        const semanticScore = data.score; // 0-10
+        setScore(semanticScore);
+
+        // 2. Generate Qualitative Feedback using Gemini
+        setStatus('Generating qualitative feedback...');
+        const model = "gemini-3-flash-preview";
+        const feedbackResult = await genAI.models.generateContent({
+          model,
+          contents: `Act as a professional examiner. A student scored ${semanticScore}/10 on a theoretical question. 
+          Model Answer: "${modelAnswer}"
+          Student Response: "${studentResponse}"
+          Provide a constructive 2-sentence feedback summary highlighting strengths or areas for improvement.`,
+        });
+        setFeedback(feedbackResult.text || '');
+        
+        setStatus('Evaluation complete!');
+      } catch (fetchErr: any) {
+        clearTimeout(timeoutId);
+        if (fetchErr.name === 'AbortError') {
+          throw new Error('The backend server is taking too long to respond. This usually happens on the first request of the day as the server "wakes up". Please try again in a few seconds.');
+        }
+        throw fetchErr;
+      }
     } catch (err: any) {
       console.error('Evaluation Error:', err);
       const errorMessage = err.message || '';

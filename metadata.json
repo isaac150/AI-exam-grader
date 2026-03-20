@@ -1,0 +1,7 @@
+{
+  "name": "AI-exam-grader",
+  "description": "Professional AI-powered exam grading tool with OCR, semantic scoring, and PDF reporting.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

@@ -64,12 +64,12 @@ export default function App() {
         reader.readAsDataURL(file);
       });
 
-      const model = "gemini-3.1-pro-preview";
+      const model = "gemini-3-flash-preview";
       const result = await genAI.models.generateContent({
         model,
         contents: {
           parts: [
-            { text: "Extract all handwritten text from this image. Return only the text content. If no text is found, return an empty string. Be precise and maintain the structure of the text." },
+            { text: "Transcribe everything you see in this image. I need the text content for an automated grading system. If there is handwriting, please do your best to read it. If it's completely blank or unreadable, return nothing." },
             { inlineData: { mimeType: fileData.type, data: fileData.base64 } }
           ]
         }
@@ -77,7 +77,8 @@ export default function App() {
 
       const text = result.text || '';
       if (!text.trim()) {
-        setStatus('No text detected in the image.');
+        setStatus('No text detected.');
+        setError('No text was found in the image. Tips: Ensure the paper is well-lit, the handwriting is clear, and you are capturing the text directly.');
       } else {
         setStudentResponse(prev => prev ? prev + '\n' + text : text);
         setStatus('Scan complete!');
